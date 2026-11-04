@@ -1,0 +1,7 @@
+/target/
+/dist/
+/spikes/**/out/
+*.log
+*.pdb
+# 从小智导出的真实布局含个人文件名，不入库
+/private/

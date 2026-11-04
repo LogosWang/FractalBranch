@@ -1,0 +1,10 @@
+[workspace]
+resolver = "3"
+members = ["app", "spikes/desktop-mount"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
