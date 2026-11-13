@@ -74,6 +74,8 @@ const MAX_CRASHES: u32 = 3;
 const STABLE_SECS: u64 = 60;
 /// 任务管理器“结束任务”的退出码，用户主动结束，不重启。
 const EXIT_END_TASK: u32 = 1;
+/// 关机、注销时系统结束进程用的退出码（DBG_TERMINATE_PROCESS），不算崩溃。
+const EXIT_SYSTEM_TERMINATE: u32 = 0x4001_0004;
 
 /// 守护模式：等主进程退出。无论怎么退出都恢复原生图标；异常退出时重启主进程。
 pub fn run_guard(pid: u32, crashes: u32) {
@@ -90,7 +92,7 @@ pub fn run_guard(pid: u32, crashes: u32) {
         let _ = CloseHandle(handle);
     }
     set_icons_visible(true);
-    if code == 0 || code == EXIT_END_TASK {
+    if code == 0 || code == EXIT_END_TASK || code == EXIT_SYSTEM_TERMINATE {
         return;
     }
     let lived = started.elapsed().as_secs();

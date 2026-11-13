@@ -555,8 +555,21 @@ fn panel_pos(i: usize) -> Option<(i32, i32)> {
             let top = view::content_top(a.layout.partition(up_id)?);
             Some((px(a, part.x), px(a, top + part.y - up.scroll)))
         }
-        None => Some((px(a, part.x) - a.origin.0, px(a, part.y) - a.origin.1)),
+        None => {
+            let r = view::shown_rect(part, a.work);
+            Some((px(a, r.l) - a.origin.0, px(a, r.t) - a.origin.1))
+        }
     }
+}
+
+/// 拖动从分区当前显示的位置算起；子分区不受屏幕大小影响。
+fn shown_xy(i: usize, p: &Partition) -> (f32, f32) {
+    let a = app();
+    if a.panels[i].parent.is_some() {
+        return (p.x, p.y);
+    }
+    let r = view::shown_rect(p, a.work);
+    (r.l, r.t)
 }
 
 fn place_panel(i: usize) {
@@ -771,20 +784,8 @@ fn apply_display_change() {
     if let Some((progman, _)) = desktop::find_desktop() {
         a.origin = progman_origin(progman);
     }
-    // 分辨率变小时，把跑出屏幕的分区拉回来。
-    let (sw, sh) = a.work;
-    let mut moved = false;
-    for p in &mut a.layout.partitions {
-        let (nx, ny) = (p.x.min((sw - 60.0).max(0.0)).max(0.0), p.y.min((sh - view::HEADER_H).max(0.0)).max(0.0));
-        if (nx, ny) != (p.x, p.y) {
-            p.x = nx;
-            p.y = ny;
-            moved = true;
-        }
-    }
-    if moved {
-        mark_dirty();
-    }
+    // 屏幕变小时不改保存的位置：可能只是唤醒或远程桌面的过渡状态。
+    // 跑出屏幕的分区由 view::shown_rect 在显示时挪回来，屏幕恢复后回到原处。
     sync_panels();
 }
 
@@ -967,7 +968,8 @@ fn on_left_down(i: usize, h: HWND, x: i32, y: i32) {
         }
         Hit::Edge(mask) => {
             if let Some(p) = panel_partition(i) {
-                a.panels[i].action = Action::Resize { mask, sx: sp.x, sy: sp.y, ox: p.x, oy: p.y, ow: p.w, oh: p.h };
+                let (ox, oy) = shown_xy(i, p);
+                a.panels[i].action = Action::Resize { mask, sx: sp.x, sy: sp.y, ox, oy, ow: p.w, oh: p.h };
                 unsafe { SetCapture(h) };
             }
         }
@@ -1026,7 +1028,8 @@ fn on_mouse_move(i: usize, h: HWND, x: i32, y: i32) {
                 Hit::Item(_) => begin_item_drag(i, h),
                 Hit::Title => {
                     if let Some(p) = panel_partition(i) {
-                        a.panels[i].action = if p.locked { Action::None } else { Action::Move { sx: px0, sy: py0, ox: p.x, oy: p.y } };
+                        let (ox, oy) = shown_xy(i, p);
+                        a.panels[i].action = if p.locked { Action::None } else { Action::Move { sx: px0, sy: py0, ox, oy } };
                     }
                 }
                 _ => a.panels[i].action = Action::None,

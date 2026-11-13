@@ -169,9 +169,17 @@ pub fn partition_rect(p: &Partition) -> Rect {
     Rect { l: p.x, t: p.y, r: p.x + p.w, b: p.y + if p.collapsed { HEADER_H } else { p.h } }
 }
 
+/// 分区实际显示的位置。屏幕暂时变小（唤醒、远程桌面、显卡驱动重载）时，
+/// 跑出屏幕的分区只在显示上挪回来，保存的位置不动，屏幕恢复后自然回到原处。
+pub fn shown_rect(p: &Partition, work: (f32, f32)) -> Rect {
+    let x = p.x.min((work.0 - 60.0).max(0.0)).max(0.0);
+    let y = p.y.min((work.1 - HEADER_H).max(0.0)).max(0.0);
+    Rect { l: x, t: y, r: x + p.w, b: y + if p.collapsed { HEADER_H } else { p.h } }
+}
+
 /// 底层桌面的排布：先上后下、先左后右，让开分区占用的位置。
 pub fn desktop_cells(n: usize, tab: &Tab, style: &Style, work: (f32, f32), partitions: &[Partition]) -> Vec<Rect> {
-    let rects: Vec<Rect> = partitions.iter().map(partition_rect).collect();
+    let rects: Vec<Rect> = partitions.iter().map(|p| shown_rect(p, work)).collect();
     let (cw, ch) = (tab.cell_w.max(1.0), tab.cell_h.max(1.0));
     let box_h = icon_box_h(tab, style);
     let mut out = Vec::with_capacity(n);
@@ -731,6 +739,30 @@ mod tests {
         let t = tab_with(0);
         let p = Partition::new("p", 0.0, 0.0, 1000.0, 1000.0);
         assert_eq!(desktop_cells(10, &t, &Style::default(), (300.0, 300.0), &[p]).len(), 10);
+    }
+
+    #[test]
+    fn shown_rect_pulls_offscreen_partitions_in_without_touching_the_layout() {
+        let p = Partition::new("p", 1650.0, 600.0, 260.0, 300.0);
+        // 屏幕暂时只剩 1024x768 / 1.25 这么大。
+        let r = shown_rect(&p, (819.0, 576.0));
+        assert!(r.l <= 819.0 - 60.0 && r.t <= 576.0 - HEADER_H);
+        assert_eq!((p.x, p.y), (1650.0, 600.0));
+        // 屏幕恢复后，显示位置就是保存的位置。
+        let r = shown_rect(&p, (1920.0, 1032.0));
+        assert_eq!((r.l, r.t), (1650.0, 600.0));
+    }
+
+    #[test]
+    fn desktop_cells_avoid_where_partitions_are_shown() {
+        let t = tab_with(0);
+        // 保存的位置在屏幕下方之外，实际显示被挪到了屏幕底部，图标要让开显示的位置。
+        let p = Partition::new("p", 0.0, 5000.0, 400.0, 100.0);
+        let shown = shown_rect(&p, (400.0, 500.0));
+        let c = desktop_cells(5, &t, &Style::default(), (400.0, 500.0), &[p]);
+        assert!(c.iter().all(|r| !r.intersects(&shown)));
+        // 第一列第五格会压到挪上来的分区，所以换到了第二列。
+        assert_eq!(c[4].l, 100.0);
     }
 
     #[test]
